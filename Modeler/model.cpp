@@ -11,15 +11,24 @@
 #include "modelerapp.h"
 #include "modelerdraw.h"
 #include <FL/gl.h>
+#include <math.h>
 
-
+#define PI 3.14159265359
+#define degToRad(x) (x * PI / 180)
 
 // This is a list of the controls for the RobotArm
 // We'll use these constants to access the values 
 // of the controls from the user interface.
 enum BoxModelControls
 { 
-    XPOS, YPOS, ZPOS, HEIGHT, DIRECTION, LOWER_ARM_LENGTH, LOWER_ARM_ANGLE, UPPER_ARM_LENGTH, UPPER_ARM_ANGLE, NUMCONTROLS,
+    XPOS, YPOS, ZPOS, HEIGHT, DIRECTION,
+    ABDOMEN_LENGTH, ABDOMEN_WIDTH, ABDOMEN_HEIGHT, ABDOMEN_OFFSET,
+    HEAD_LENGTH, HEAD_WIDTH, HEAD_HEIGHT,
+    LEG_RADIUS, TOE_RADIUS, LEG_TOP_LENGTH, LEG_MIDDLE_LENGTH, LEG_BOTTOM_LENGTH, FOOT_LENGTH,
+    HIP_VERTICAL_ANGLE, KNEE_1_ANGLE, KNEE_2_ANGLE, ANKLE_ANGLE,
+    FRONT_HIP_LATERAL_ANGLE, FORWARD_MIDDLE_HIP_LATERAL_ANGLE, BACKWARD_MIDDLE_HIP_LATERAL_ANGLE, BACK_HIP_LATERAL_ANGLE,
+    FRONT_LEG_POSITION, FORWARD_MIDDLE_LEG_POSITION, BACKWARD_MIDDLE_LEG_POSITION, BACK_LEG_POSITION,
+    NUMCONTROLS,
 };
 
 // To make a BoxModel, we inherit off of ModelerView
@@ -32,6 +41,8 @@ public:
     BoxModel(int x, int y, int w, int h, char *label) 
         : ModelerView(x,y,w,h,label) {}
     virtual void draw();
+private:
+    void drawLeg(const BoxModelControls legPosition, const BoxModelControls hipLateralAngle, const int yDirection);
 };
 
 // We need to make a creator function, mostly because of
@@ -61,44 +72,62 @@ void BoxModel::draw()
 	setAmbientColor(.1f,.1f,.1f);
 	setDiffuseColor(.5f,.5,0);
 	glPushMatrix();
-	glTranslated(-2.5,0,-2.5);
-	drawBox(5,0.01f,5);
+	glTranslated(-10,0,-10);
+	drawBox(20,0.01f,20);
 	glPopMatrix();
 
-	// draw the box
+	// Cephalothorax (head)
 	setAmbientColor(.1f,.1f,.1f);
-	setDiffuseColor(0,1,.5f);
+	setDiffuseColor(0.8, 0.8, 0.8);
     glTranslated(VAL(XPOS), VAL(YPOS), VAL(ZPOS));
+    glTranslated(0, VAL(HEIGHT), 0);
     glRotated(VAL(DIRECTION), 0, 1, 0);
     glPushMatrix();
-    glScaled(1, VAL(HEIGHT), 1);
-    glRotated(-90, 1, 0, 0);
-    drawCylinder(1, 1, 1);
+    glScaled(VAL(HEAD_WIDTH), VAL(HEAD_HEIGHT), VAL(HEAD_LENGTH));
+    drawSphere(1);
     glPopMatrix();
+    
+    // Abdomen
     glPushMatrix();
-    glTranslated(0, VAL(HEIGHT), 0);
-    setDiffuseColor(0.5, 0, 0);
-    drawSphere(0.5);
+    glRotated(180, 0, 1, 0);
+    glTranslated(0, 0, VAL(ABDOMEN_OFFSET));
+    glScaled(VAL(ABDOMEN_WIDTH), VAL(ABDOMEN_HEIGHT), VAL(ABDOMEN_LENGTH));
+    drawSphere(1);
     glPopMatrix();
-    glTranslated(0, VAL(HEIGHT), 0);
-    glRotated(VAL(LOWER_ARM_ANGLE), 0, 0, 1);
+    
+    drawLeg(FRONT_LEG_POSITION, FRONT_HIP_LATERAL_ANGLE, 1);
+    drawLeg(FORWARD_MIDDLE_LEG_POSITION, FORWARD_MIDDLE_HIP_LATERAL_ANGLE, 1);
+    drawLeg(BACKWARD_MIDDLE_LEG_POSITION, BACKWARD_MIDDLE_HIP_LATERAL_ANGLE, 1);
+    drawLeg(BACK_LEG_POSITION, BACK_HIP_LATERAL_ANGLE, 1);
+
+    drawLeg(FRONT_LEG_POSITION, FRONT_HIP_LATERAL_ANGLE, -1);
+    drawLeg(FORWARD_MIDDLE_LEG_POSITION, FORWARD_MIDDLE_HIP_LATERAL_ANGLE, -1);
+    drawLeg(BACKWARD_MIDDLE_LEG_POSITION, BACKWARD_MIDDLE_HIP_LATERAL_ANGLE, -1);
+    drawLeg(BACK_LEG_POSITION, BACK_HIP_LATERAL_ANGLE, -1);
+}
+
+void BoxModel::drawLeg(const BoxModelControls legPosition, const BoxModelControls hipLateralAngle, const int yDirection)
+{
+    const double legPositionRadians = VAL(legPosition) * PI;
     glPushMatrix();
-    glTranslated(-0.25, 0, -0.25);
-    glScaled(0.5, VAL(LOWER_ARM_LENGTH), 0.5);
-    setDiffuseColor(0, 0, 1);
-    drawBox(1, 1, 1);
-	glPopMatrix();
-    glPushMatrix();
-    glTranslated(0, VAL(LOWER_ARM_LENGTH), 0);
-    setDiffuseColor(0.5, 0, 0);
-    drawSphere(0.5);
+    // Upper
+    glTranslated(yDirection * sin(legPositionRadians), 0, cos(legPositionRadians));
+    glRotated(VAL(hipLateralAngle), 0, yDirection, 0);
+    glRotated(-VAL(HIP_VERTICAL_ANGLE), 1, 0, 0);
+    drawCylinder(VAL(LEG_TOP_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
+    // Middle
+    glTranslated(0, 0, VAL(LEG_TOP_LENGTH));
+    glRotated(VAL(KNEE_1_ANGLE), 1, 0, 0);
+    drawCylinder(VAL(LEG_MIDDLE_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
+    // Lower
+    glTranslated(0, 0, VAL(LEG_MIDDLE_LENGTH));
+    glRotated(VAL(KNEE_2_ANGLE), 1, 0, 0);
+    drawCylinder(VAL(LEG_BOTTOM_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
+    // Ankle
+    glTranslated(0, 0, VAL(LEG_BOTTOM_LENGTH));
+    glRotated(VAL(ANKLE_ANGLE) - 90, 1, 0, 0);
+    drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));
     glPopMatrix();
-    glTranslated(0, VAL(LOWER_ARM_LENGTH), 0);
-    glRotated(VAL(UPPER_ARM_ANGLE), 0, 0, 1);
-    glTranslated(-0.25, 0, -0.25);
-    glScaled(0.5, VAL(UPPER_ARM_LENGTH), 0.5);
-    setDiffuseColor(0, 0, 1);
-    drawBox(1, 1, 1);
 }
 
 int main()
@@ -111,12 +140,33 @@ int main()
 	controls[XPOS]   = ModelerControl("X Position", -5, 5, 0.1f, 0);
 	controls[YPOS]   = ModelerControl("Y Position",  0, 5, 0.1f, 0);
 	controls[ZPOS]   = ModelerControl("Z Position", -5, 5, 0.1f, 0);
-	controls[HEIGHT] = ModelerControl("Height",      1, 5, 0.1f, 1);
+	controls[HEIGHT] = ModelerControl("Height",      1, 5, 0.1f, 2);
     controls[DIRECTION] = ModelerControl("Direction", 0, 360, 0.1f, 0);
-    controls[LOWER_ARM_LENGTH] = ModelerControl("Lower Arm Length", 1, 5, 0.1f, 2);
-    controls[LOWER_ARM_ANGLE] = ModelerControl("Lower Arm Angle", -90, 90, 0.1f, -45);
-    controls[UPPER_ARM_LENGTH] = ModelerControl("Upper Arm Length", 1, 5, 0.1f, 1);
-    controls[UPPER_ARM_ANGLE] = ModelerControl("Upper Arm Angle", -90, 90, 0.1f, -45);
+    controls[ABDOMEN_LENGTH] = ModelerControl("Abdomen Length", 0, 5, 0.1f, 2.03);
+    controls[ABDOMEN_WIDTH] = ModelerControl("Abdomen Width", 0, 5, 0.1f, 1.44);
+    controls[ABDOMEN_HEIGHT] = ModelerControl("Abdomen Height", 1, 5, 0.1f, 1.23);
+    controls[ABDOMEN_OFFSET] = ModelerControl("Abdomen Offset", 0, 5, 0.1f, 2.01);
+    controls[HEAD_LENGTH] = ModelerControl("Head Length", 0, 5, 0.1f, 1.53);
+    controls[HEAD_WIDTH] = ModelerControl("Head Width", 0, 5, 0.1f, 1.36);
+    controls[HEAD_HEIGHT] = ModelerControl("Head Height", 1, 5, 0.1f, 1);
+    controls[LEG_RADIUS] = ModelerControl("Leg Radius", 0, 1, 0.1f, 0.15);
+    controls[TOE_RADIUS] = ModelerControl("Toe Radius", 0, 1, 0.1f, 0.1);
+    controls[LEG_TOP_LENGTH] = ModelerControl("Leg Length (Top)", 1, 5, 0.1f, 3.5);
+    controls[LEG_MIDDLE_LENGTH] = ModelerControl("Leg Length (Middle)", 1, 5, 0.1f, 2.5);
+    controls[LEG_BOTTOM_LENGTH] = ModelerControl("Leg Length (Bottom)", 1, 5, 0.1f, 2.75);
+    controls[FOOT_LENGTH] = ModelerControl("Foot Length", 1, 5, 0.1f, 2);
+    controls[HIP_VERTICAL_ANGLE] = ModelerControl("Hip Angle", 0, 180, 0.1f, 42);
+    controls[KNEE_1_ANGLE] = ModelerControl("First Knee Angle", 0, 180, 0.1f, 64);
+    controls[KNEE_2_ANGLE] = ModelerControl("Second Knee Angle", 0, 180, 0.1f, 55);
+    controls[ANKLE_ANGLE] = ModelerControl("Ankle Angle", 0, 180, 0.1f, 30.5);
+    controls[FRONT_LEG_POSITION] = ModelerControl("Leg Position (Front)", 0, 1, 0.1f, 0.17);
+    controls[FRONT_HIP_LATERAL_ANGLE] = ModelerControl("Hip Lateral Angle (Front)", 0, 180, 0.1f, 40);
+    controls[FORWARD_MIDDLE_LEG_POSITION] = ModelerControl("Leg Position (Fwd. Mid.)", 0, 1, 0.1f, 0.34);
+    controls[FORWARD_MIDDLE_HIP_LATERAL_ANGLE] = ModelerControl("Hip Lateral Angle (Fwd. Mid.)", 0, 180, 0.1f, 70);
+    controls[BACKWARD_MIDDLE_LEG_POSITION] = ModelerControl("Leg Position (Back Mid.)", 0, 1, 0.1f, 0.45);
+    controls[BACKWARD_MIDDLE_HIP_LATERAL_ANGLE] = ModelerControl("Hip Lateral Angle (Back Mid.)", 0, 180, 0.1f, 110);
+    controls[BACK_LEG_POSITION] = ModelerControl("Leg Position (Back)", 0, 1, 0.1f, 0.53);
+    controls[BACK_HIP_LATERAL_ANGLE] = ModelerControl("Hip Lateral Angle (Back)", 0, 180, 0.1f, 140);
     
     // Initialize the modeler application with your model and the
     // appropriate array of controls.
