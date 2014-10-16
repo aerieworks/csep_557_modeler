@@ -19,7 +19,7 @@
 // of the controls from the user interface.
 enum BoxModelControls
 { 
-    XPOS, YPOS, ZPOS, HEIGHT, NUMCONTROLS,
+    XPOS, YPOS, ZPOS, HEIGHT, DIRECTION, LOWER_ARM_LENGTH, LOWER_ARM_ANGLE, UPPER_ARM_LENGTH, UPPER_ARM_ANGLE, NUMCONTROLS,
 };
 
 // To make a BoxModel, we inherit off of ModelerView
@@ -68,15 +68,37 @@ void BoxModel::draw()
 	// draw the box
 	setAmbientColor(.1f,.1f,.1f);
 	setDiffuseColor(0,1,.5f);
-	glPushMatrix();
-	glTranslated(VAL(XPOS), VAL(YPOS), VAL(ZPOS));
-	glTranslated(-.5,0,-.5);
-	glScaled(1, VAL(HEIGHT), 1);
-	drawBox(1,1,1);
+    glTranslated(VAL(XPOS), VAL(YPOS), VAL(ZPOS));
+    glRotated(VAL(DIRECTION), 0, 1, 0);
+    glPushMatrix();
+    glScaled(1, VAL(HEIGHT), 1);
+    glRotated(-90, 1, 0, 0);
+    drawCylinder(1, 1, 1);
+    glPopMatrix();
+    glPushMatrix();
+    glTranslated(0, VAL(HEIGHT), 0);
+    setDiffuseColor(0.5, 0, 0);
+    drawSphere(0.5);
+    glPopMatrix();
+    glTranslated(0, VAL(HEIGHT), 0);
+    glRotated(VAL(LOWER_ARM_ANGLE), 0, 0, 1);
+    glPushMatrix();
+    glTranslated(-0.25, 0, -0.25);
+    glScaled(0.5, VAL(LOWER_ARM_LENGTH), 0.5);
+    setDiffuseColor(0, 0, 1);
+    drawBox(1, 1, 1);
 	glPopMatrix();
-
-
-
+    glPushMatrix();
+    glTranslated(0, VAL(LOWER_ARM_LENGTH), 0);
+    setDiffuseColor(0.5, 0, 0);
+    drawSphere(0.5);
+    glPopMatrix();
+    glTranslated(0, VAL(LOWER_ARM_LENGTH), 0);
+    glRotated(VAL(UPPER_ARM_ANGLE), 0, 0, 1);
+    glTranslated(-0.25, 0, -0.25);
+    glScaled(0.5, VAL(UPPER_ARM_LENGTH), 0.5);
+    setDiffuseColor(0, 0, 1);
+    drawBox(1, 1, 1);
 }
 
 int main()
@@ -90,7 +112,12 @@ int main()
 	controls[YPOS]   = ModelerControl("Y Position",  0, 5, 0.1f, 0);
 	controls[ZPOS]   = ModelerControl("Z Position", -5, 5, 0.1f, 0);
 	controls[HEIGHT] = ModelerControl("Height",      1, 5, 0.1f, 1);
-
+    controls[DIRECTION] = ModelerControl("Direction", 0, 360, 0.1f, 0);
+    controls[LOWER_ARM_LENGTH] = ModelerControl("Lower Arm Length", 1, 5, 0.1f, 2);
+    controls[LOWER_ARM_ANGLE] = ModelerControl("Lower Arm Angle", -90, 90, 0.1f, -45);
+    controls[UPPER_ARM_LENGTH] = ModelerControl("Upper Arm Length", 1, 5, 0.1f, 1);
+    controls[UPPER_ARM_ANGLE] = ModelerControl("Upper Arm Angle", -90, 90, 0.1f, -45);
+    
     // Initialize the modeler application with your model and the
     // appropriate array of controls.
     ModelerApplication::Instance()->Init(&createBoxModel, controls, NUMCONTROLS);
