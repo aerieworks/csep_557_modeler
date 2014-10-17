@@ -14,7 +14,6 @@
 #include <math.h>
 
 #define PI 3.14159265359
-#define degToRad(x) (x * PI / 180)
 
 // This is a list of the controls for the RobotArm
 // We'll use these constants to access the values 
@@ -49,14 +48,13 @@ public:
     // Constructor for the model.  In your model, 
     // make sure you call the ModelerView constructor,
     // as done below.
-    BoxModel(int x, int y, int w, int h, char *label)
-        : ModelerView(x,y,w,h,label)
-    {
-    }
+    BoxModel(int x, int y, int w, int h, char *label) : ModelerView(x,y,w,h,label), frame(0) {}
     virtual void draw();
 private:
+    int frame;
+    
     void drawLeg(const LegSide side, const double position, const double hipLatAngle, const double hipVertAngle, const double upperKneeAngle,
-                 const double lowerKneeAngle, const double ankleAngle);
+                 const double lowerKneeAngle, const double ankleAngle, const double xRotation);
 };
 
 // We need to make a creator function, mostly because of
@@ -70,6 +68,9 @@ ModelerView* createBoxModel(int x, int y, int w, int h, char *label)
 // might as well have it as a macro.
 
 #define VAL(x) (ModelerApplication::Instance()->GetControlValue(x))
+
+// Create a sinusoidal transition from v0 to v0+vd
+#define sinize(v0, vd, t0, t1, t) (v0 + vd * (cos((double)(t - t0) / (t1 - t0) * PI + PI) + 1) / 2)
 
 // We are going to override (is that the right word?) the draw()
 // method of ModelerView to draw out RobotArm
@@ -88,17 +89,12 @@ void BoxModel::draw()
 	drawBox(20,0.01f,20);
 	glPopMatrix();
 
-	// Cephalothorax (head)
-	setAmbientColor(.1f,.1f,.1f);
-	setDiffuseColor(0.8, 0.8, 0.8);
+    setAmbientColor(.1f,.1f,.1f);
+    setDiffuseColor(0.8, 0.8, 0.8);
     glTranslated(VAL(XPOS), VAL(YPOS), VAL(ZPOS));
     glTranslated(0, VAL(HEIGHT), 0);
     glRotated(VAL(DIRECTION), 0, 1, 0);
-    glPushMatrix();
-    glScaled(VAL(HEAD_WIDTH), VAL(HEAD_HEIGHT), VAL(HEAD_LENGTH));
-    drawSphere(1);
-    glPopMatrix();
-    
+
     // Abdomen
     glPushMatrix();
     glRotated(180, 0, 1, 0);
@@ -106,33 +102,54 @@ void BoxModel::draw()
     glScaled(VAL(ABDOMEN_WIDTH), VAL(ABDOMEN_HEIGHT), VAL(ABDOMEN_LENGTH));
     drawSphere(1);
     glPopMatrix();
-    
-    drawLeg(LEFT, VAL(LEFT_FRONT_LEG_POS), VAL(LEFT_FRONT_HIP_LAT_ANGLE), VAL(LEFT_FRONT_HIP_VERTICAL_ANGLE) + 24*fabs(sin(VAL(TIME) / 4)), VAL(LEFT_FRONT_KNEE_1_ANGLE),
-            VAL(LEFT_FRONT_KNEE_2_ANGLE), VAL(LEFT_FRONT_ANKLE_ANGLE));
-    drawLeg(LEFT, VAL(LEFT_FWD_MID_LEG_POS), VAL(LEFT_FWD_MID_HIP_LAT_ANGLE), VAL(LEFT_FWD_MID_HIP_VERTICAL_ANGLE), VAL(LEFT_FWD_MID_KNEE_1_ANGLE),
-            VAL(LEFT_FWD_MID_KNEE_2_ANGLE), VAL(LEFT_FWD_MID_ANKLE_ANGLE));
-    drawLeg(LEFT, VAL(LEFT_BACK_MID_LEG_POS), VAL(LEFT_BACK_MID_HIP_LAT_ANGLE), VAL(LEFT_BACK_MID_HIP_VERTICAL_ANGLE), VAL(LEFT_BACK_MID_KNEE_1_ANGLE),
-            VAL(LEFT_BACK_MID_KNEE_2_ANGLE), VAL(LEFT_BACK_MID_ANKLE_ANGLE));
-    drawLeg(LEFT, VAL(LEFT_BACK_LEG_POS), VAL(LEFT_BACK_HIP_LAT_ANGLE), VAL(LEFT_BACK_HIP_VERTICAL_ANGLE), VAL(LEFT_BACK_KNEE_1_ANGLE),
-            VAL(LEFT_BACK_KNEE_2_ANGLE), VAL(LEFT_BACK_ANKLE_ANGLE));
 
-    drawLeg(RIGHT, VAL(RIGHT_FRONT_LEG_POS), VAL(RIGHT_FRONT_HIP_LAT_ANGLE), VAL(RIGHT_FRONT_HIP_VERTICAL_ANGLE), VAL(RIGHT_FRONT_KNEE_1_ANGLE),
-            VAL(RIGHT_FRONT_KNEE_2_ANGLE), VAL(RIGHT_FRONT_ANKLE_ANGLE));
+    // Cephalothorax (head)
+    glTranslated(0, 0, -VAL(HEAD_LENGTH)/4);
+    glRotated(sinize(0, 30, 0, 30, frame), -1, 0, 0);
+    glTranslated(0, 0, VAL(HEAD_LENGTH)/4);
+    glPushMatrix();
+    glScaled(VAL(HEAD_WIDTH), VAL(HEAD_HEIGHT), VAL(HEAD_LENGTH));
+    drawSphere(1);
+    glPopMatrix();
+    
+    
+    drawLeg(LEFT, VAL(LEFT_FRONT_LEG_POS),
+            sinize(VAL(LEFT_FRONT_HIP_LAT_ANGLE), -30, 0, 30, frame),
+            sinize(VAL(LEFT_FRONT_HIP_VERTICAL_ANGLE), -30, 0, 30, frame),
+            sinize(VAL(LEFT_FRONT_KNEE_1_ANGLE), -60, 0, 30, frame),
+            sinize(VAL(LEFT_FRONT_KNEE_2_ANGLE), 30, 0, 30, frame),
+            sinize(VAL(LEFT_FRONT_ANKLE_ANGLE), 90, 0, 30, frame), 0);
+    drawLeg(LEFT, VAL(LEFT_FWD_MID_LEG_POS), VAL(LEFT_FWD_MID_HIP_LAT_ANGLE), VAL(LEFT_FWD_MID_HIP_VERTICAL_ANGLE), VAL(LEFT_FWD_MID_KNEE_1_ANGLE),
+            VAL(LEFT_FWD_MID_KNEE_2_ANGLE), VAL(LEFT_FWD_MID_ANKLE_ANGLE), 30);
+    drawLeg(LEFT, VAL(LEFT_BACK_MID_LEG_POS), VAL(LEFT_BACK_MID_HIP_LAT_ANGLE), VAL(LEFT_BACK_MID_HIP_VERTICAL_ANGLE), VAL(LEFT_BACK_MID_KNEE_1_ANGLE),
+            VAL(LEFT_BACK_MID_KNEE_2_ANGLE), VAL(LEFT_BACK_MID_ANKLE_ANGLE), 30);
+    drawLeg(LEFT, VAL(LEFT_BACK_LEG_POS), VAL(LEFT_BACK_HIP_LAT_ANGLE), VAL(LEFT_BACK_HIP_VERTICAL_ANGLE), VAL(LEFT_BACK_KNEE_1_ANGLE),
+            VAL(LEFT_BACK_KNEE_2_ANGLE), VAL(LEFT_BACK_ANKLE_ANGLE), 30);
+
+    drawLeg(RIGHT, VAL(RIGHT_FRONT_LEG_POS),
+            sinize(VAL(RIGHT_FRONT_HIP_LAT_ANGLE), -30, 0, 30, frame),
+            sinize(VAL(RIGHT_FRONT_HIP_VERTICAL_ANGLE), -30, 0, 30, frame),
+            sinize(VAL(RIGHT_FRONT_KNEE_1_ANGLE), -60, 0, 30, frame),
+            sinize(VAL(RIGHT_FRONT_KNEE_2_ANGLE), 30, 0, 30, frame),
+            sinize(VAL(RIGHT_FRONT_ANKLE_ANGLE), 90, 0, 30, frame), 0);
     drawLeg(RIGHT, VAL(RIGHT_FWD_MID_LEG_POS), VAL(RIGHT_FWD_MID_HIP_LAT_ANGLE), VAL(RIGHT_FWD_MID_HIP_VERTICAL_ANGLE),
-            VAL(RIGHT_FWD_MID_KNEE_1_ANGLE), VAL(RIGHT_FWD_MID_KNEE_2_ANGLE), VAL(RIGHT_FWD_MID_ANKLE_ANGLE));
+            VAL(RIGHT_FWD_MID_KNEE_1_ANGLE), VAL(RIGHT_FWD_MID_KNEE_2_ANGLE), VAL(RIGHT_FWD_MID_ANKLE_ANGLE), 30);
     drawLeg(RIGHT, VAL(RIGHT_BACK_MID_LEG_POS), VAL(RIGHT_BACK_MID_HIP_LAT_ANGLE), VAL(RIGHT_BACK_MID_HIP_VERTICAL_ANGLE),
-            VAL(RIGHT_BACK_MID_KNEE_1_ANGLE), VAL(RIGHT_BACK_MID_KNEE_2_ANGLE), VAL(RIGHT_BACK_MID_ANKLE_ANGLE));
+            VAL(RIGHT_BACK_MID_KNEE_1_ANGLE), VAL(RIGHT_BACK_MID_KNEE_2_ANGLE), VAL(RIGHT_BACK_MID_ANKLE_ANGLE), 30);
     drawLeg(RIGHT, VAL(RIGHT_BACK_LEG_POS), VAL(RIGHT_BACK_HIP_LAT_ANGLE), VAL(RIGHT_BACK_HIP_VERTICAL_ANGLE), VAL(RIGHT_BACK_KNEE_1_ANGLE),
-            VAL(RIGHT_BACK_KNEE_2_ANGLE), VAL(RIGHT_BACK_ANKLE_ANGLE));
+            VAL(RIGHT_BACK_KNEE_2_ANGLE), VAL(RIGHT_BACK_ANKLE_ANGLE), 30);
+    
+    frame = (frame + 1) % 60;
 }
 
 void BoxModel::drawLeg(const LegSide side, const double position, const double hipLatAngle, const double hipVertAngle, const double upperKneeAngle,
-                       const double lowerKneeAngle, const double ankleAngle)
+                       const double lowerKneeAngle, const double ankleAngle, const double xRotation)
 {
     const double legPositionRadians = position * PI;
     glPushMatrix();
     // Upper
     glTranslated(side * sin(legPositionRadians), 0, cos(legPositionRadians));
+    glRotated(sinize(0, xRotation, 0, 30, frame), 1, 0, 0);
     glRotated(hipLatAngle, 0, side, 0);
     glRotated(-hipVertAngle, 1, 0, 0);
     drawCylinder(VAL(LEG_UPPER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
