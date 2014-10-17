@@ -304,11 +304,11 @@ ModelerUserInterface::ModelerUserInterface() {
     }
     o->end();
   }
-  { Fl_Double_Window* o = m_modelerWindow = new Fl_Double_Window(340, 296, "Model");
+  { Fl_Double_Window* o = m_modelerWindow = new Fl_Double_Window(800, 600, "Model");
     w = o;
     o->callback((Fl_Callback*)cb_m_modelerWindow, (void*)(this));
     o->when(FL_WHEN_NEVER);
-    { ModelerView* o = m_modelerView = new ModelerView(0, 0, 340, 295, "ModelerView");
+    { ModelerView* o = m_modelerView = new ModelerView(0, 0, 800, 599, "ModelerView");
       o->box(FL_NO_BOX);
       o->color(FL_BACKGROUND_COLOR);
       o->selection_color(FL_BACKGROUND_COLOR);
