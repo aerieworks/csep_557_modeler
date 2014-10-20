@@ -28,7 +28,7 @@ enum BoxModelControls
     HEAD_LENGTH, HEAD_WIDTH, HEAD_HEIGHT,
     LEG_RADIUS, TOE_RADIUS, LEG_UPPER_LENGTH, LEG_MIDDLE_LENGTH, LEG_LOWER_LENGTH, FOOT_LENGTH,
     LOWER_KNEE_ANGLE_FROM_GROUND,
-    HEEL_TO_HIP_DISTANCE,
+    HEEL_TO_HIP_DISTANCE, HIP_ANGLE_ADJUSTMENT,
     _1_LEG_POS, _2_LEG_POS, _3_LEG_POS, _4_LEG_POS,
     L1_HIP_ANGLE, L1_X_OFFSET, L1_Y_OFFSET,
     L2_HIP_ANGLE, L2_X_OFFSET, L2_Y_OFFSET,
@@ -53,6 +53,7 @@ enum LegSide
 #define VAL(x) (ModelerApplication::Instance()->GetControlValue(x))
 
 #define DEG(x) (180 / PI * (x))
+#define SQ(x) (pow((x), 2))
 
 class Leg
 {
@@ -67,7 +68,8 @@ public:
         double hipAngle;
         double knee1Angle;
         double knee2Angle;
-        findHipAngle(x, y, hipAngle, knee1Angle, knee2Angle);
+        double ankleAngle;
+        findHipAngle2(x, -y, hipAngle, knee1Angle, knee2Angle, ankleAngle);
         glPushMatrix();
         // Upper
         glTranslated(side * sin(legPositionRadians), 0, cos(legPositionRadians));
@@ -83,9 +85,9 @@ public:
         glTranslated(0, 0, VAL(LEG_MIDDLE_LENGTH));
         glRotated(knee2Angle, 1, 0, 0);
         drawCylinder(VAL(LEG_LOWER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // AnklelowerLength
+        // Foot
         glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
-        glRotated(-VAL(LOWER_KNEE_ANGLE_FROM_GROUND), 1, 0, 0);
+        glRotated(ankleAngle, 1, 0, 0);
         drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));
         glPopMatrix();
     }
@@ -95,10 +97,112 @@ private:
     LegSide side;
     double position;
     
-    //double getKnee1Angle(double hipAngle) { return hipAngle * VAL(HIP_KNEE1_RATIO); }
-    //double getKnee2Angle(double hipAngle) { return hipAngle * VAL(HIP_KNEE2_RATIO); }
+    void findHipAngle2(double x, double y, double& hipAngle, double& knee1Angle, double& knee2Angle, double& ankleAngle)
+    {
+        cerr << "Finding angles" << endl;
+        const double upperLength = VAL(LEG_UPPER_LENGTH);
+        const double middleLength = VAL(LEG_MIDDLE_LENGTH);
+        const double lowerLength = VAL(LEG_LOWER_LENGTH);
+        double distance = sqrt(pow(x, 2) + pow(y, 2));
+        double hipAngleRad;
 
-    void findHipAngle(double x, double y, double& hipAngle, double& knee1Angle, double& knee2Angle)
+        // Start with the hip angle set to something that will "work" (but not necessarily be comfortable).
+        const double initialAngle = atan(y / x);
+        bool isUpperParallel = false;
+        if (distance > upperLength)
+        {
+            // Start with the upper leg angled towards the target heel point.
+            hipAngleRad = initialAngle;
+            isUpperParallel = true;
+            if (distance >= upperLength + middleLength + lowerLength)
+            {
+                hipAngle = DEG(hipAngleRad);
+                knee1Angle = 0;
+                knee2Angle = 0;
+                ankleAngle = hipAngle;
+                return;
+            }
+        }
+        else
+        {
+            // Start with the upper leg angled perpendicular to the target heel point.
+            hipAngle = initialAngle - PI/2;
+        }
+
+        double innerKnee1Rad = NAN;
+        double innerKnee2Rad = NAN;
+        double ankleRad = NAN;
+        
+        double lastDelta = NAN;
+        double lastHipAngleRad = NAN;
+        bool canDoBetter = true;
+        int factor = 0;
+        do
+        {
+            double curInnerKnee1Rad, curInnerKnee2Rad, curAnkleRad;
+            findInnerKneeAngles(x, y, hipAngleRad, curInnerKnee1Rad, curInnerKnee2Rad, curAnkleRad);
+            const double adjKnee1Rad = PI - curInnerKnee1Rad;
+            const double adjKnee2Rad = PI - curInnerKnee2Rad;
+            const double curDelta = fabs(adjKnee1Rad - adjKnee2Rad);
+            if (isnan(lastDelta) || curDelta < lastDelta)
+            {
+                lastDelta = curDelta;
+                innerKnee1Rad = curInnerKnee1Rad;
+                innerKnee2Rad = curInnerKnee2Rad;
+                ankleRad = curAnkleRad;
+                lastHipAngleRad = hipAngleRad;
+            }
+            else if (factor < 2)
+            {
+                hipAngleRad = lastHipAngleRad;
+                factor += 1;
+            }
+            else
+            {
+                break;
+            }
+            lastHipAngleRad = hipAngleRad;
+            const double inc = PI/(180 * pow(10, factor));
+            hipAngleRad += inc;
+
+        } while (true);
+        cerr << "Angles: " << PI - innerKnee1Rad << ", " << PI - innerKnee2Rad << endl;
+        hipAngle = DEG(hipAngleRad);
+        knee1Angle = DEG(PI - innerKnee1Rad);
+        knee2Angle = DEG(PI - innerKnee2Rad);
+        ankleAngle = -DEG(ankleRad);
+        
+    }
+        
+    void findInnerKneeAngles(double x, double y, double hipRad, double& innerKnee1Rad, double& innerKnee2Rad, double& ankleRad)
+    {
+        const double upperLength = VAL(LEG_UPPER_LENGTH);
+        const double middleLength = VAL(LEG_MIDDLE_LENGTH);
+        const double lowerLength = VAL(LEG_LOWER_LENGTH);
+
+        // Calculate the distance between the end of the upper leg and the target heel point.
+        const double upperY = upperLength * sin(hipRad);
+        const double remainingX = x - upperLength * cos(hipRad);
+        const double remainingY = y - upperY;
+        double distance = sqrt(SQ(remainingX) + SQ(remainingY));
+
+        // Calculate knee angles using Law of Cosines.
+        double lowRemainingAngle = acos((SQ(lowerLength) + SQ(distance) - SQ(middleLength)) / (2 * lowerLength * distance));
+        double midRemainingAngle = acos((SQ(middleLength) + SQ(distance) - SQ(lowerLength)) / (2 * middleLength * distance));
+        innerKnee2Rad = PI - midRemainingAngle - lowRemainingAngle;
+        
+        if (upperY < 0)
+        {
+            innerKnee1Rad = midRemainingAngle + fabs(hipRad) + PI/2 + asin(remainingX / distance);
+        }
+        else
+        {
+            innerKnee1Rad = midRemainingAngle + (PI/2 - fabs(hipRad)) + asin(remainingX / distance);
+        }
+        ankleRad = lowRemainingAngle + acos(remainingX / distance);
+    }
+    
+    void findHipAngle(double x, double y, double& hipAngle, double& knee1Angle, double& knee2Angle, double& ankleAngle)
     {
         cerr << "Finding hip angle for (" << x << ", " << y << "), " << VAL(LEG_UPPER_LENGTH) << ", " << VAL(LEG_MIDDLE_LENGTH) << ", " << VAL(LEG_LOWER_LENGTH) << endl;
         double min = 0;
@@ -160,6 +264,7 @@ private:
         hipAngle = DEG(hipAngleRad);
         knee1Angle = DEG(hipAngleRad + knee1AngleRad);
         knee2Angle = DEG(knee2AngleFromXRad - knee1AngleRad);
+        ankleAngle = -VAL(LOWER_KNEE_ANGLE_FROM_GROUND);
         cerr << "Going with: " << hipAngle << ", " << knee1Angle << ", " << knee2Angle << endl;
     }
 };
@@ -295,7 +400,8 @@ int main()
     controls[LEG_LOWER_LENGTH] = ModelerControl("Leg Length (Bottom)", 1, 5, 0.1f, 2.75);
     controls[FOOT_LENGTH] = ModelerControl("Foot Length", 1, 5, 0.1f, 2);
     controls[LOWER_KNEE_ANGLE_FROM_GROUND] = ModelerControl("Lower Knee Angle", 0, 180, 0.1f, 65);
-    controls[HEEL_TO_HIP_DISTANCE] = ModelerControl("Heel-to-Hip Distance", 0, 7, 0.1f, 5);
+    controls[HEEL_TO_HIP_DISTANCE] = ModelerControl("Heel-to-Hip Distance", 0, 15, 0.1f, 5);
+    controls[HIP_ANGLE_ADJUSTMENT] = ModelerControl("Hip Angle Adjustment", 0, 1, 0.01f, 0);
 
     controls[_1_LEG_POS] = ModelerControl("Leg Position (Front)", 0, 1, 0.1f, 0.17);
     controls[_2_LEG_POS] = ModelerControl("Leg Position (Front Mid.)", 0, 1, 0.1f, 0.34);
