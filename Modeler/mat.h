@@ -2,6 +2,7 @@
 #define __MATRIX_HEADER__
 
 #include <iostream>
+#include <math.h>
 
 //==========[ Forward References ]=============================================
 
