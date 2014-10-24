@@ -91,35 +91,25 @@ void drawOriginSphere(const char* name, double r = 0.8, double g = 0, double b =
     drawFixedSphere(Vec4<double>(0, 0, 0, 1), r, g, b);
 }
 
-static int iteration = 0;
-bool doLog()
-{
-    return iteration % 500 == 0;
-}
-
 class Bone
 {
 public:
     double angle;
-    
+    const double length;
+    const Vec3d axis;
+
     Bone(const double length, const Vec3d axis) : length(length), axis(axis), angle(0) {}
     
-    Mat4d apply(const Mat4d& mat)
+    Vec3d apply(const double prevAngle, const Vec3d& start)
     {
-        const Vec4d start4d = mat * Vec4d(0, 0, 0, 1);
-        start = Vec3d(start4d[0], start4d[1], start4d[2]);
-        
-        jacobianAxis = mat * axis;
-        
-        Mat4d newMat = mat * mat.createRotation(angle, axis[0], axis[1], axis[2]) * mat.createTranslation(length, 0, 0);
-        const Vec4d end4d = newMat * Vec4d(0, 0, 0, 1);
-        end = Vec3d(end4d[0], end4d[1], end4d[2]);
-        return newMat;
+        this->start = start;
+        end = Vec3d(start[0], start[1] + length * sin(prevAngle + angle), start[2] + length * cos(prevAngle + angle));
+        return end;
     }
     
     Vec3d getJacobianAxis()
     {
-        return jacobianAxis;
+        return axis;
     }
     
     Vec3d getStart()
@@ -135,8 +125,6 @@ private:
     Vec3d jacobianAxis;
     Vec3d start;
     Vec3d end;
-    const Vec3d axis;
-    const double length;
 };
 
 Vec3d crossProduct(const Vec3d& u, const Vec3d& v)
@@ -158,169 +146,338 @@ public:
         double hipAngle, knee1Angle, knee2Angle, ankleAngle;
         Vec4<double> hipVec(side * VAL(HEAD_WIDTH) * sin(legPositionRadians), 0, VAL(HEAD_LENGTH) * cos(legPositionRadians), 1);
         cerr << "Hipvec: " << hipVec << endl;
-        //findAngles(x, y - VAL(HEIGHT), hipAngle, knee1Angle, knee2Angle, ankleAngle);
         // Upper
         glPushMatrix();
         glTranslated(hipVec[0], hipVec[1], hipVec[2]);
         Mat4<double> mat = copyMVMatrix().inverse();
-        Vec4<double> target = mat * Vec4<double>(x * cos(legPositionRadians), 0, x * sin(legPositionRadians), 1);
-        Vec4d angles = findAngles2(target);
-        
-        /*glRotated(angles[0], 0, side, 0);
-        glRotated(angles[1], 1, 0, 0);
-        drawCylinder(VAL(LEG_UPPER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // Middle
-        glTranslated(0, 0, VAL(LEG_UPPER_LENGTH));
-        glRotated(angles[2], 1, 0, 0);
-        drawCylinder(VAL(LEG_MIDDLE_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // Lower
-        glTranslated(0, 0, VAL(LEG_MIDDLE_LENGTH));
-        glRotated(angles[3], 1, 0, 0);
-        drawCylinder(VAL(LEG_LOWER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // Foot
-        glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
-        glRotated(0, 1, 0, 0);
-        drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));*/
-
+        //Vec4<double> target = mat * Vec4<double>(x * cos(legPositionRadians), 0, x * sin(legPositionRadians), 1);
+        Vec3d target(3, -VAL(HEIGHT), 4);//VAL(HEIGHT), 1);
+        findAngles2(target);
         glPopMatrix();
     }
     
 private:
-    const double JACOBIAN_EPSILON = 1;
+    const double JACOBIAN_EPSILON = 0.01;
     const double JACOBIAN_THRESHOLD = 0.1;
-    const double JACOBIAN_ITERATION_LIMIT = 600000;
+    int JACOBIAN_ITERATION_LIMIT;
     const int JOINT_COUNT = 4;
     
     LegSide side;
     double position;
-    
-    void drawWithAngles(const Vec4d angles, double r, double g, double b)
+
+    int iteration;
+    bool doLog()
     {
+        double percent = 100 * (double)iteration / (double)JACOBIAN_ITERATION_LIMIT;
+        return fmod(percent, 10) == 0;
+    }
+    
+    void drawWithAngles(double* angles, int jointCount, double r, double g, double b)
+    {
+        cerr << "Drawing with "; printVector(angles, jointCount);
         glPushMatrix();
         setDiffuseColor(r, g, b);
-        glRotated(angles[0], 0, side, 0);
-        glRotated(angles[1], 1, 0, 0);
+        int angleIndex = 0;
+        glRotated(DEG(angles[angleIndex++]), 0, side, 0);
+        //glRotated(DEG(angles[angleIndex++]), -1, 0, 0);
         drawCylinder(VAL(LEG_UPPER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
         // Middle
         glTranslated(0, 0, VAL(LEG_UPPER_LENGTH));
-        glRotated(angles[2], 1, 0, 0);
+        glRotated(DEG(angles[angleIndex++]), -1, 0, 0);
         drawCylinder(VAL(LEG_MIDDLE_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
         // Lower
         glTranslated(0, 0, VAL(LEG_MIDDLE_LENGTH));
-        glRotated(angles[3], 1, 0, 0);
+        glRotated(DEG(angles[angleIndex++]), -1, 0, 0);
         drawCylinder(VAL(LEG_LOWER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
         // Foot
-        glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
+        /*glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
         glRotated(0, 1, 0, 0);
         drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));
-        setDiffuseColor(0.8, 0.8, 0.8);
+        setDiffuseColor(0.8, 0.8, 0.8);*/
         glPopMatrix();
     }
     
-    Vec4d findAngles2(const Vec3d target)
+    void findAngles2(const Vec3d target)
     {
+        JACOBIAN_ITERATION_LIMIT = 400;//VAL(TIME);
         cerr << "InvKin to " << target << endl;
         glPushMatrix();
         glTranslated(target[0], target[1], target[2]);
         drawSphere(0.25);
         glPopMatrix();
         
-        Bone* bones[JOINT_COUNT];
-        bones[0] = new Bone(0, Vec3d(0, 1, 0));
-        bones[1] = new Bone(VAL(LEG_UPPER_LENGTH), Vec3d(1, 0, 0));
-        bones[2] = new Bone(VAL(LEG_MIDDLE_LENGTH), Vec3d(1, 0, 0));
-        bones[3] = new Bone(VAL(LEG_LOWER_LENGTH), Vec3d(1, 0, 0));
-
+        int jointCount = 3;
+        Bone* bones[jointCount];
+        int angleIndex = 0;
+        //bones[angleIndex++] = new Bone(0, Vec3d(0, 1, 0));
+        bones[angleIndex++] = new Bone(VAL(LEG_UPPER_LENGTH), Vec3d(0, 1, 0));
+        bones[angleIndex++] = new Bone(VAL(LEG_MIDDLE_LENGTH), Vec3d(1, 0, 0));
+        bones[angleIndex++] = new Bone(VAL(LEG_LOWER_LENGTH), Vec3d(1, 0, 0));
+        Vec3d boneStart;
+        double angle = 0;
+        // Adjust bone positions.
+        for (int i = 0; i < jointCount; i++)
+        {
+            boneStart = bones[i]->apply(angle, boneStart);
+            angle += bones[i]->angle;
+        }
+        
         int jointIndex = 0;
         bool done = false;
-        Vec4d deltas;
+        double* deltas = new double[jointCount];
         iteration = 0;
         while (!done && iteration < JACOBIAN_ITERATION_LIMIT)
         {
-            // Adjust bone positions.
-            Mat4d mat;
-            for (int i = 0; i < JOINT_COUNT; i++)
+            //Vec3d effector(bones[jointCount - 1]->getEnd());
+            Vec4d effector(buildTransformationMatrix(bones, jointCount) * Vec4d(0, 0, 0, 1));
+            // Initialize Jacobian.
+            double** J = new double*[3];
+            // Fill the Jacobian.
+            for (int r = 0; r < 3; r++)
             {
-                mat = bones[i]->apply(mat);
+                J[r] = new double[jointCount];
+            }
+            buildJacobian2(J, jointCount, bones);
+            /*double totalX = 0;
+            double totalY = 0;
+            double totalZ = 0;
+            for (int j = 0; j < jointCount; j++)
+            {
+                totalAngle += bones[j]->angle;
+                J[0][j] = 0;
+                J[1][j] = (j == 0 ? 0 : J[1][j - 1]) + bones[j]->length * cos(totalAngle);
+                J[2][j] = (j == 0 ? 0 : J[2][j - 1]) - bones[j]->length * sin(totalAngle);
+            }*/
+            // Apply the adjustment value.
+            double* deltaTheta = solveJacobian(J, target - effector, jointCount);
+            Vec3d boneStart;
+            double angle = 0;
+            // Adjust bone positions.
+            for (int i = 0; i < jointCount; i++)
+            {
+                bones[i]->angle += deltaTheta[i];
+                deltas[i] = bones[i]->angle;
+                boneStart = bones[i]->apply(angle, boneStart);
                 if (doLog())
                 {
-                    //cerr << "[" << iteration << "] Bone " << i << " result matrix: " << endl << mat << endl;
+                    /*cerr << "Drawing sphere at " << boneStart << endl;
+                    glPushMatrix();
+                    setDiffuseColor((double)iteration / (double)JACOBIAN_ITERATION_LIMIT, 0, 0);
+                    glTranslated(boneStart[0], boneStart[1], boneStart[2]);
+                    drawSphere(0.25);
+                    glPopMatrix();*/
                 }
+                angle += bones[i]->angle;
             }
-
-            // We use a 4x4 for the Jacobian, but leave the last row 0 and ignore it (so we can still use the Mat4 class).
-            Mat4d J;
-            Vec3d effector(bones[JOINT_COUNT - 1]->getEnd());
-            for (int i = 0; i < JOINT_COUNT; i++)
-            {
-                // Fill the Jacobian.
-                Vec3d column(crossProduct(bones[i]->getJacobianAxis(), effector - bones[i]->getStart()));
-                for (int j = 0; j < 3; j++)
-                {
-                    J.n[j * 4 + i] = column[j];
-                }
-                
-                // Build a vector of deltas.
-                deltas[i] = bones[i]->angle;
-            }
-            //cerr << "Jacobian: " << endl << J << endl;
-            
-            // Apply the adjustment value.
-            bones[jointIndex]->angle += JACOBIAN_EPSILON;
-            //cerr << "Adjusting " << jointIndex << " to " << bones[jointIndex]->angle << endl;
-            double curDifference = getJacobianDifference(J, deltas, target);
+            effector = buildTransformationMatrix(bones, jointCount) * Vec4d(0, 0, 0, 1);//bones[jointCount - 1]->getEnd();
+            double curDifference = getMagnitude(target - effector);
             if (doLog())
             {
+                buildJacobian2(J, jointCount, bones);
+                cerr << "Jacobian 2:" << endl; printMatrix(J, 3, jointCount);
                 cerr << "Effector location: " << effector << endl;
-                //drawWithAngles(deltas, (double)iteration / (double)JACOBIAN_ITERATION_LIMIT, 0, 0);
+                cerr << "Target diff: " << (target - effector) << endl;
+                cerr << "Current difference: " << curDifference << endl;
+                cerr << "New delta theta: " << deltaTheta << ", results in " << deltas << endl;
+                drawWithAngles(deltas, jointCount, (double)iteration / (double)JACOBIAN_ITERATION_LIMIT, 0, 0);
             }
             if (curDifference <= JACOBIAN_THRESHOLD)
             {
-                cerr << "Got close enough." << endl;
+                cerr << "[" << iteration << "]" << endl << "Got close enough: " << curDifference << endl;
+                cerr << "Effector location: " << effector << endl;
+                cerr << "Target diff: " << (target - effector) << endl;
+                cerr << "New delta theta: " << deltaTheta << ", results in " << deltas << endl;
                 // Close enough, call it good.
                 done = true;
             }
 
-            jointIndex = (jointIndex + 1) % JOINT_COUNT;
+            jointIndex = (jointIndex + 1) % jointCount;
             iteration += 1;
+            
+            for (int r = 0; r < 3; r++)
+            {
+                  delete J[r];
+            }
+            delete J;
+            delete deltaTheta;
         }
-        drawWithAngles(deltas, 0, 0, 0.8);
+        drawWithAngles(deltas, jointCount, 0, 0, 0.8);
  
-        for (int i = 0; i < JOINT_COUNT; i++)
+        for (int i = 0; i < jointCount; i++)
         {
             delete bones[i];
         }
         
-        cerr << "Final angles: " << deltas << endl;
-        return deltas;
+        cerr << "Final angles: ";
+        //printVector(deltas, jointCount);
+        //delete deltas;
+    }
+
+    void buildJacobian(double** J, const int jointCount, Bone* bones[])
+    {
+        J[0][0] = 0; J[0][1] = 0; J[0][2] = 0;
+        J[1][2] = bones[2]->length * cos(bones[0]->angle + bones[1]->angle + bones[2]->angle);
+        J[1][1] = bones[1]->length * cos(bones[0]->angle + bones[1]->angle) + J[1][2];
+        J[1][0] = bones[0]->length * cos(bones[0]->angle) + J[1][1];
+        J[2][2] = -bones[2]->length * sin(bones[0]->angle + bones[1]->angle + bones[2]->angle);
+        J[2][1] = -bones[1]->length * sin(bones[0]->angle + bones[1]->angle) + J[1][2];
+        J[2][0] = -bones[0]->length * sin(bones[0]->angle) + J[1][1];
     }
     
-    double** multiplyMatrix(const double** m1, const double** m2, const int rows, const int cols)
+    void buildJacobian2(double ** J, const int jointCount, Bone* bones[])
     {
-        double** result[rows][cols];
-        for (int tgtR = 0; tgtR < rows; tgtR++)
+        Vec4d origin(0, 0, 0, 1);
+        Vec4d start = buildTransformationMatrix(bones, jointCount) * origin;
+        
+        for (int i = 0; i < jointCount; i++)
         {
-            for (int tgtC = 0; tgtC < cols; tgtC++)
+            Vec4d p = buildTransformationMatrix(bones, jointCount, i) * origin;
+            for (int j = 0; j < 3; j++)
             {
-                double result = 0;
-                for (int srcR = 0;
-                m2Col[0] = m2[0][c];
-                m2[1][c], m2[2][c]);
+                J[j][i] = p[j] - start[j];
             }
         }
     }
     
-    double getJacobianDifference(const Vecd* J, const int jointCount, const Vecd& deltas, const Vec3d& target)
+    Mat4d buildTransformationMatrix(Bone* bones[], const int count, const int deltaIndex = -1)
     {
-        Vec3d result;
+        Mat4d m;
+        for (int i = 0; i < count; i++)
+        {
+            double angle = bones[i]->angle + (deltaIndex == i ? 1 : 0);
+            m = m * m.createRotation(angle, -bones[i]->axis[0], -bones[i]->axis[1], -bones[i]->axis[2])
+                * m.createTranslation(0, 0, bones[i]->length);
+        }
+        return m;
+    }
+    
+    void printMatrix(double** mat, const int rows, const int cols)
+    {
+        for (int r = 0; r < rows; r++)
+        {
+            printVector(mat[r], cols);
+        }
+    }
+    
+    void printVector(double* vec, const int size)
+    {
+        for (int i = 0; i < size; i++)
+        {
+            cerr << vec[i] << " ";
+        }
+        cerr << endl;
+    }
+    
+    double** transpose(double** mat, const int srcRows, const int srcCols)
+    {
+        double** t = new double*[srcCols];
+        for (int destR = 0; destR < srcCols; destR++)
+        {
+            t[destR] = new double[srcRows];
+            for (int destC = 0; destC < srcRows; destC++)
+            {
+                t[destR][destC] = mat[destC][destR];
+            }
+        }
+        return t;
+    }
+    
+    double* solveJacobian(Mat3d J, const Vec3d& deltaX, const int jointCount)
+    {
+        double* deltaTheta = new double[jointCount];
+        Vec3d deltaThetaVec = (J.transpose() * deltaX) * JACOBIAN_EPSILON;
+        for (int i = 0; i < jointCount; i++)
+        {
+            deltaTheta[i] = deltaThetaVec[i];
+            if (fabs(deltaTheta[i]) < 1e-5)
+            {
+                deltaTheta[i] = 0;
+            }
+        }
+        
+        if (doLog())
+        {
+            cerr << "[" << iteration << "] Jacobian: " << J << J.transpose() << endl;
+            cerr << "deltaX: " << deltaX << endl;
+            cerr << "deltaTheta: "; printVector(deltaTheta, jointCount);
+        }
+        return deltaTheta;
+    }
+    
+    double* solveJacobian(double** J, const Vec3d& deltaX, const int jointCount)
+    {
+        double MAX_CHANGE = 1;
+        Vec3d clampedDeltaX;
         for (int i = 0; i < 3; i++)
         {
-            Vecd jointResult = J[i] * deltas;
-            for (int j = 0; j < jointCount; j++)
+            double w = deltaX[i];
+            clampedDeltaX[i] = (fabs(w) <= MAX_CHANGE) ? w : (MAX_CHANGE * w/fabs(w));
+        }
+        double** JT = transpose(J, 3, jointCount);
+        double* deltaTheta = multiply(JT, clampedDeltaX, jointCount);
+        for (int i = 0; i < jointCount; i++)
+        {
+            deltaTheta[i] *= JACOBIAN_EPSILON;
+            if (fabs(deltaTheta[i]) < 1e-5)
             {
-                result[i] += jointResult[i];
+                deltaTheta[i] = 0;
+            }
+            else if (fabs(deltaTheta[i]) > 1e20)
+            {
+                cerr << "[" << iteration << "] DeltaTheta got huge for " << i << ": " << deltaTheta[i] << endl;
+                printMatrix(JT, jointCount, 3);
             }
         }
+        
+        if (doLog())
+        {
+            cerr << "[" << iteration << "] Jacobian: " << endl;
+            printMatrix(J, 3, jointCount);
+            printMatrix(JT, jointCount, 3);
+            cerr << "deltaX: " << deltaX << endl;
+            cerr << "clamped deltaX: " << clampedDeltaX << endl;
+            cerr << "deltaTheta: "; printVector(deltaTheta, jointCount);
+        }
+        
+        for (int i = 0; i < 3; i++)
+        {
+            delete JT[i];
+        }
+        delete JT;
+        
+        return deltaTheta;
+    }
+
+    double* multiply(double** mat, const Vec3d& vec, const int rows)
+    {
+        double* result = new double[rows];
+        for (int r = 0; r < rows; r++)
+        {
+            result[r] = 0;
+            for (int c = 0; c < 3; c++)
+            {
+                result[r] += mat[r][c] * vec[c];
+            }
+        }
+        return result;
+    }
+    
+    double getMagnitude(Vec3d vec)
+    {
+        return fabs(vec[0]) + fabs(vec[1]) + fabs(vec[2]);
+    }
+    
+    double getJacobianDifference(double* J[3], const int jointCount, double* deltas, const Vec3d& target)
+    {
+        Vec3d result(0, 0, 0);
+        for (int r = 0; r < 3; r++)
+        {
+            for (int j = 0; j < jointCount; j++)
+            {
+                result[r] += J[r][j] * deltas[j];
+            }
+        }
+        
         return (target - result).length();
     }
     
@@ -491,7 +648,7 @@ void BoxModel::draw()
     // Cephalothorax (head)
     glTranslated(0, 0, -VAL(HEAD_LENGTH)/4);
     const double angle = sinize(0, 30, 0, 30, VAL(TIME));
-    glRotated(angle, -1, 0, 0);
+    //glRotated(angle, -1, 0, 0);
     glTranslated(0, 0, VAL(HEAD_LENGTH)/4);
     glPushMatrix();
     glScaled(VAL(HEAD_WIDTH), VAL(HEAD_HEIGHT), VAL(HEAD_LENGTH));
