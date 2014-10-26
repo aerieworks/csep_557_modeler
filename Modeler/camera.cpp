@@ -136,12 +136,29 @@ void Camera::applyViewingTransform() {
 
 	// Place the camera at mPosition, aim the camera at
 	// mLookAt, and twist the camera such that mUpVector is up
-	gluLookAt(	mPosition[0], mPosition[1], mPosition[2],
+    /*gluLookAt(	mPosition[0], mPosition[1], mPosition[2],
 				mLookAt[0],   mLookAt[1],   mLookAt[2],
-				mUpVector[0], mUpVector[1], mUpVector[2]);
+				mUpVector[0], mUpVector[1], mUpVector[2]);*/
 
     // You Will Have to implement this (gluLookAt() ) yourself!
 	// what fun that will be!
+    Vec3f n = mPosition - mLookAt;
+    Vec3f v = mUpVector - ((mUpVector * n) / (n * n)) * n;
+    Vec3f u = v ^ n;
+    u.normalize();
+    v.normalize();
+    n.normalize();
+
+    Mat4f mat;
+    mat[0][0] = u[0]; mat[0][1] = v[0]; mat[0][2] = n[0];
+    mat[1][0] = u[1]; mat[1][1] = v[1]; mat[1][2] = n[1];
+    mat[2][0] = u[2]; mat[2][1] = v[2]; mat[2][2] = n[2];
+    mat = mat.transpose();
+    mat = mat * mat.createTranslation(-mPosition[0], -mPosition[1], -mPosition[2]);
+    
+    // Transpose the final matrix so that n is in column-major order to match OpenGL.
+    mat = mat.transpose();
+    glMultMatrixf(mat.n);
 }
 
 #pragma warning(pop)

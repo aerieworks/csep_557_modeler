@@ -127,6 +127,7 @@ public:
         
         glPushMatrix();
         glTranslated(curHipLocation[0], curHipLocation[1], curHipLocation[2]);
+        drawSphere(VAL(LEG_RADIUS));
         
         // If we neither the hip nor the foot have moved in world space, then we don't need to recalculate the limb position.
         // We can skip the expensive IK operations.
@@ -180,17 +181,19 @@ private:
         drawCylinder(VAL(LEG_UPPER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
         // Middle
         glTranslated(0, 0, VAL(LEG_UPPER_LENGTH));
+        drawSphere(VAL(LEG_RADIUS));
         glRotated(DEG(bones[index++]->angle), -1, 0, 0);
         drawCylinder(VAL(LEG_MIDDLE_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
         // Lower
         glTranslated(0, 0, VAL(LEG_MIDDLE_LENGTH));
+        drawSphere(VAL(LEG_RADIUS));
         glRotated(DEG(bones[index++]->angle), -1, 0, 0);
         drawCylinder(VAL(LEG_LOWER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
         // Foot
-        /*glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
-        glRotated(0, 1, 0, 0);
-        drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));
-        setDiffuseColor(0.8, 0.8, 0.8);*/
+        glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
+        drawSphere(VAL(LEG_RADIUS));
+        /*glRotated(0, 1, 0, 0);
+        drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));*/
         glPopMatrix();
     }
     
@@ -261,7 +264,7 @@ private:
         // Programmatically formulating the actual forward kinematics (and their derivative) is hard.
         // Computing matrix transformations is easy.
         // So we approximate a Jacobian matrix of the forward kinematics by computing the transformation
-        // matrix for the limb given current joint angles, and given small changes to each joint (one by one).        
+        // matrix for the limb given current joint angles, and given small changes to each joint (one by one).
         Vec4d origin(0, 0, 0, 1);
         Vec4d start = buildTransformationMatrix(bones, jointCount) * origin;
         
