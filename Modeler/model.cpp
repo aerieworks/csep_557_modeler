@@ -58,7 +58,6 @@ enum LegSide
 
 #define DEG(x) (180/PI * (x))
 #define RAD(x) ((x) * PI/180)
-#define SQ(x) (pow((x), 2))
 
 Mat4<double> copyMVMatrix()
 {
@@ -95,7 +94,6 @@ public:
     Leg(LegSide side, BoxModelControls position, BoxModelControls footX, BoxModelControls footY, BoxModelControls footZ)
         : side(side), position(position), footX(footX), footY(footY), footZ(footZ)
     {
-        cerr << "Constructed." << endl;
         jointCount = 4;
         bones = new Bone*[jointCount];
         int index = 0;
@@ -114,7 +112,7 @@ public:
         delete bones;
     }
     
-    void draw()
+    void draw(const double xOffset, const double yOffset, const double zOffset)
     {
         const double legPositionRadians = RAD(VAL(position));
         Vec4d curHipLocation(side * VAL(HEAD_WIDTH) * sin(legPositionRadians), 0, VAL(HEAD_LENGTH) * cos(legPositionRadians), 1);
@@ -123,7 +121,7 @@ public:
         Mat4d mat = copyMVMatrix();
         Vec4d curHipLocationWorld = mat * curHipLocation;
         // Get the foot's world coordinates (VALs are in world space already), so we can figure out if it has moved.
-        Vec4d curFootLocation(VAL(footX), VAL(footY), VAL(footZ), 1);
+        Vec4d curFootLocation(VAL(footX) + xOffset, VAL(footY) + yOffset, VAL(footZ) + zOffset, 1);
         
         glPushMatrix();
         glTranslated(curHipLocation[0], curHipLocation[1], curHipLocation[2]);
@@ -133,13 +131,12 @@ public:
         // We can skip the expensive IK operations.
         if (curHipLocationWorld != prevHipLocation || curFootLocation != prevFootLocation)
         {
-            cerr << "Hip Diff: " << (curHipLocationWorld - prevHipLocation) << endl << "Foot Diff: " << (curFootLocation - prevFootLocation) << endl;
             prevHipLocation = curHipLocationWorld;
             prevFootLocation = curFootLocation;
             
             // Convert foot world coordinates into current space (hip-relative coordinates).
             mat = copyMVMatrix().inverse();
-            Vec4d target = mat * Vec4d(VAL(footX), VAL(footY), VAL(footZ), 1);
+            Vec4d target = mat * curFootLocation;
             findAngles(Vec3d(target[0], target[1], target[2]));
         }
         
@@ -162,14 +159,6 @@ private:
     const BoxModelControls footX, footY, footZ;
 
     int iteration;
-    bool doLog()
-    {
-        /*
-        double percent = 100 * (double)iteration / (double)JACOBIAN_ITERATION_LIMIT;
-        return fmod(percent, 10) == 0;
-        */
-        return false;
-    }
     
     void drawWithAngles()
     {
@@ -179,28 +168,23 @@ private:
         glRotated(DEG(bones[index++]->angle), 0, -side, 0);
         glRotated(DEG(bones[index++]->angle), -1, 0, 0);
         drawCylinder(VAL(LEG_UPPER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // Middle
         glTranslated(0, 0, VAL(LEG_UPPER_LENGTH));
         drawSphere(VAL(LEG_RADIUS));
+        // Middle
         glRotated(DEG(bones[index++]->angle), -1, 0, 0);
         drawCylinder(VAL(LEG_MIDDLE_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // Lower
         glTranslated(0, 0, VAL(LEG_MIDDLE_LENGTH));
         drawSphere(VAL(LEG_RADIUS));
+        // Lower
         glRotated(DEG(bones[index++]->angle), -1, 0, 0);
         drawCylinder(VAL(LEG_LOWER_LENGTH), VAL(LEG_RADIUS), VAL(LEG_RADIUS));
-        // Foot
         glTranslated(0, 0, VAL(LEG_LOWER_LENGTH));
         drawSphere(VAL(LEG_RADIUS));
-        /*glRotated(0, 1, 0, 0);
-        drawCylinder(VAL(FOOT_LENGTH), VAL(LEG_RADIUS), VAL(TOE_RADIUS));*/
         glPopMatrix();
     }
     
     double* findAngles(const Vec3d target)
     {
-        cerr << "Calculating inverse kinematics to " << target << endl;
-        
         bool done = false;
         for (int i = 0; i < jointCount; i++)
         {
@@ -230,18 +214,8 @@ private:
             }
             effector = buildTransformationMatrix(bones, jointCount) * Vec4d(0, 0, 0, 1);
             double curDifference = getMagnitude(target - effector);
-            if (doLog())
-            {
-                cerr << "Jacobian:" << endl; printMatrix(J, 3, jointCount);
-                cerr << "Effector location: " << effector << endl;
-                cerr << "Target diff: " << (target - effector) << endl;
-                cerr << "Current difference: " << curDifference << endl;
-            }
             if (curDifference <= JACOBIAN_THRESHOLD)
             {
-                /*cerr << "[" << iteration << "]" << endl << "Got close enough: " << curDifference << endl;
-                cerr << "Effector location: " << effector << endl;
-                cerr << "Target diff: " << (target - effector) << endl;*/
                 // Close enough, call it good.
                 done = true;
             }
@@ -340,16 +314,6 @@ private:
             }
         }
         
-        if (doLog())
-        {
-            cerr << "[" << iteration << "] Jacobian: " << endl;
-            printMatrix(J, 3, jointCount);
-            printMatrix(JT, jointCount, 3);
-            cerr << "deltaX: " << deltaX << endl;
-            cerr << "clamped deltaX: " << clampedDeltaX << endl;
-            cerr << "deltaTheta: "; printVector(deltaTheta, jointCount);
-        }
-        
         for (int i = 0; i < 3; i++)
         {
             delete JT[i];
@@ -428,6 +392,8 @@ void BoxModel::draw()
 	// projection matrix, don't bother with this ...
     ModelerView::draw();
     
+    const double t = VAL(TIME);
+    
     // draw the floor
 	setAmbientColor(.1f,.1f,.1f);
 	setDiffuseColor(.5f,.5,0);
@@ -438,8 +404,8 @@ void BoxModel::draw()
 
     setAmbientColor(.1f,.1f,.1f);
     setDiffuseColor(0.8, 0.8, 0.8);
-    glTranslated(VAL(XPOS), VAL(YPOS), VAL(ZPOS));
-    glTranslated(0, VAL(HEIGHT) , 0);
+    glTranslated(VAL(XPOS) + cos(2 * PI * t + (PI / 2)), VAL(YPOS), VAL(ZPOS));
+    glTranslated(0, VAL(HEIGHT) + sin(2 * PI * t - (PI / 2)), 0);
     glRotated(VAL(DIRECTION), 0, 1, 0);
 
     // Abdomen
@@ -452,22 +418,24 @@ void BoxModel::draw()
     
     // Cephalothorax (head)
     glTranslated(0, 0, -VAL(HEAD_LENGTH)/4);
-    const double angle = sinize(0, 30, 0, 30, VAL(TIME));
-    glRotated(angle, -1, 0, 0);
     glTranslated(0, 0, VAL(HEAD_LENGTH)/4);
     glPushMatrix();
     glScaled(VAL(HEAD_WIDTH), VAL(HEAD_HEIGHT), VAL(HEAD_LENGTH));
     drawSphere(1);
     glPopMatrix();
     
-    left1Leg.draw();
-    left2Leg.draw();
-    left3Leg.draw();
-    left4Leg.draw();
-    right1Leg.draw();
-    right2Leg.draw();
-    right3Leg.draw();
-    right4Leg.draw();
+    double leftXOffset = t < 0.5 ? 0 : sinize(0, -1, 0, 0.25, t);
+    double leftYOffset = t < 0.5 ? 0 : sinize(0, 0.75, 0, 0.25, t);
+    double rightXOffset = t > 0.5 ? 0 : sinize(0, 1, 0, 0.25, t);
+    double rightYOffset = t > 0.5 ? 0 : sinize(0, 0.75, 0, 0.25, t);
+    left1Leg.draw(leftXOffset, leftYOffset, 0);
+    left2Leg.draw(leftXOffset, leftYOffset, 0);
+    left3Leg.draw(leftXOffset, leftYOffset, 0);
+    left4Leg.draw(leftXOffset, leftYOffset, 0);
+    right1Leg.draw(rightXOffset, rightYOffset, 0);
+    right2Leg.draw(rightXOffset, rightYOffset, 0);
+    right3Leg.draw(rightXOffset, rightYOffset, 0);
+    right4Leg.draw(rightXOffset, rightYOffset, 0);
 
     frame = (frame + 1) % 60;
 }
@@ -479,7 +447,7 @@ int main()
 	//								 stepsize, defaultvalue)
     // You will want to modify this to accommodate your model.
     ModelerControl controls[NUMCONTROLS];
-    controls[TIME]   = ModelerControl("Time", 0, 100, 0.1f, 0);
+    controls[TIME]   = ModelerControl("Time", 0, 1, 0.01f, 0);
 	controls[XPOS]   = ModelerControl("X Position", -5, 5, 0.1f, 0);
 	controls[YPOS]   = ModelerControl("Y Position",  0, 5, 0.1f, 0);
 	controls[ZPOS]   = ModelerControl("Z Position", -5, 5, 0.1f, 0);
