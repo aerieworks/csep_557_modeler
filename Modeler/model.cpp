@@ -15,6 +15,7 @@
 #include <FL/gl.h>
 #include <math.h>
 #include <iostream>
+#include <forward_list>
 
 #define PI 3.14159265359
 
@@ -67,6 +68,127 @@ Mat4<double> copyMVMatrix()
     // Transpose the matrix to swap the rows and columns into their correct arrangement.
     return mat.transpose();
 }
+
+class A {};
+class B : public A {};
+
+class Node
+{
+public:
+    Node() {}
+    virtual ~Node()
+    {
+        while (!children.empty())
+        {
+            delete children.front();
+            children.pop_front();
+        }
+    }
+    
+    virtual const Mat4d* const getMatrix() const { return nullptr; }
+    virtual void draw() const {};
+    virtual bool isVariable() const { return false; }
+    virtual double getValue() const { return 0; }
+    virtual void setValue(const double value) {}
+
+    Node* addNode(Node* child)
+    {
+        children.push_front(child);
+        return this;
+    }
+    
+    forward_list<Node*>& getChildren()
+    {
+        return children;
+    }
+private:
+    forward_list<Node*> children;
+};
+
+class TransformNode : public Node
+{
+public:
+    TransformNode() : Node() {}
+    virtual const Mat4d* const getMatrix() const
+    {
+        return &matrix;
+    }
+protected:
+    Mat4d matrix;
+};
+
+class RotationNode : public TransformNode
+{
+public:
+    RotationNode(const double angle, const double x, const double y, const double z) : x(x), y(y), z(z), TransformNode()
+    {
+        setValue(angle);
+    }
+
+    virtual bool isVariable() const
+    {
+        return true;
+    }
+    
+    virtual double getValue() const
+    {
+        return angle;
+    }
+    
+    virtual void setValue(const double value)
+    {
+        angle = value;
+        matrix = matrix.createRotation(angle, x, y, z);
+    }
+private:
+    double angle, x, y, z;
+};
+
+class TranslationNode : public TransformNode
+{
+public:
+    TranslationNode(const double x, const double y, const double z) : TransformNode()
+    {
+        matrix = matrix.createTranslation(x, y, z);
+    }
+};
+
+class ScaleNode : public TransformNode
+{
+public:
+    ScaleNode(const double x, const double y, const double z) : TransformNode()
+    {
+        matrix = matrix.createScale(x, y, z);
+    }
+};
+
+class SphereNode : public Node
+{
+public:
+    SphereNode(const double radius) : radius(radius), Node() {}
+    
+    virtual void draw()
+    {
+        drawSphere(radius);
+    }
+private:
+    const double radius;
+};
+
+class CylinderNode : public Node
+{
+public:
+    CylinderNode(const double length, const double radius1, const double radius2) : length(length), radius1(radius1), radius2(radius2), Node() {}
+    
+    virtual void draw()
+    {
+        drawCylinder(length, radius1, radius2);
+    }
+private:
+    const double length;
+    const double radius1;
+    const double radius2;
+};
 
 class Bone
 {
@@ -361,6 +483,18 @@ public:
             right3Leg(RIGHT, _3_HIP_POS, R3_FOOT_X, R3_FOOT_Y, R3_FOOT_Z),
             right4Leg(RIGHT, _4_HIP_POS, R4_FOOT_X, R4_FOOT_Y, R4_FOOT_Z)
     {
+        Node* root = new TranslationNode(cos(2 * PI * t + (PI / 2)), 2 + sin(2 * PI * t - (PI / 2)), 0);
+        // Cephalothorax (head)
+        root->addNode(
+            (new ScaleNode(1.36, 1, 1.53))->addNode(new SphereNode(1))
+        );
+        
+        // Abdomen
+        root->addNode(
+            (new TranslationNode(0, 0, 2))->addNode(
+                (new ScaleNode(1.44, 1.23, 2.03))->addNode(new SphereNode(1))
+            )
+        );
     }
     
     virtual void draw();
@@ -395,32 +529,28 @@ void BoxModel::draw()
     const double t = VAL(TIME);
     
     // draw the floor
-	setAmbientColor(.1f,.1f,.1f);
+    setAmbientColor(0.1f,.1f,0.1f);
 	setDiffuseColor(.5f,.5,0);
 	glPushMatrix();
 	glTranslated(-10,0,-10);
 	drawBox(20,0.01f,20);
 	glPopMatrix();
 
-    setAmbientColor(.1f,.1f,.1f);
     setDiffuseColor(0.8, 0.8, 0.8);
     glTranslated(VAL(XPOS) + cos(2 * PI * t + (PI / 2)), VAL(YPOS), VAL(ZPOS));
     glTranslated(0, VAL(HEIGHT) + sin(2 * PI * t - (PI / 2)), 0);
     glRotated(VAL(DIRECTION), 0, 1, 0);
 
-    // Abdomen
-    glPushMatrix();
-    glRotated(180, 0, 1, 0);
-    glTranslated(0, 0, VAL(ABDOMEN_OFFSET));
-    glScaled(VAL(ABDOMEN_WIDTH), VAL(ABDOMEN_HEIGHT), VAL(ABDOMEN_LENGTH));
-    drawSphere(1);
-    glPopMatrix();
-    
     // Cephalothorax (head)
-    glTranslated(0, 0, -VAL(HEAD_LENGTH)/4);
-    glTranslated(0, 0, VAL(HEAD_LENGTH)/4);
     glPushMatrix();
     glScaled(VAL(HEAD_WIDTH), VAL(HEAD_HEIGHT), VAL(HEAD_LENGTH));
+    drawSphere(1);
+    glPopMatrix();
+
+    // Abdomen
+    glPushMatrix();
+    glTranslated(0, 0, -VAL(ABDOMEN_OFFSET));
+    glScaled(VAL(ABDOMEN_WIDTH), VAL(ABDOMEN_HEIGHT), VAL(ABDOMEN_LENGTH));
     drawSphere(1);
     glPopMatrix();
     
